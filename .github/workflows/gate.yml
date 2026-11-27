@@ -1,0 +1,80 @@
+# Stands in for Atlas's review-routing.yaml, without the model. On a pull
+# request's head, the App posts "routing (main)" and approves. On a merge group,
+# it recuses: it posts "routing (main)" as not applicable on the group's commit.
+# Repo variables: SLEEP (seconds before recusing), RECUSE=off (skip it).
+name: gate
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+
+permissions: {}
+
+env:
+  CHECK_NAME: routing (main)
+
+jobs:
+  route:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    environment:
+      name: review-routing
+      deployment: false
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_KEY }}
+          permission-checks: write
+          permission-contents: write
+          permission-pull-requests: write
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" -f name="$CHECK_NAME" -f head_sha="$HEAD_SHA" \
+            -f status=completed -f conclusion=success -f 'output[title]=Self review permitted' -f 'output[summary]=Probe.' >/dev/null
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" -f commit_id="$HEAD_SHA" -f event=APPROVE \
+            -f body='Administrative approval (probe).' >/dev/null
+          echo "::notice title=route::posted and approved $HEAD_SHA"
+
+  recuse:
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    environment:
+      name: review-routing
+      deployment: false
+    steps:
+      - name: Report
+        env:
+          KEY: ${{ secrets.APP_KEY }}
+          PROBE: ${{ secrets.PROBE_SECRET }}
+          GROUP_HEAD: ${{ github.event.merge_group.head_sha }}
+          GROUP_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          echo "::notice title=recuse::ref=$GITHUB_REF sha=$GITHUB_SHA workflow_sha=$GITHUB_WORKFLOW_SHA group_head=$GROUP_HEAD group_ref=$GROUP_REF key=$([ -n "$KEY" ] && echo present || echo absent) probe=$([ -n "$PROBE" ] && echo present || echo absent)"
+      - name: Wait
+        if: vars.SLEEP != ''
+        run: sleep "${{ vars.SLEEP }}"
+      - id: app
+        if: vars.RECUSE != 'off'
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_KEY }}
+          permission-checks: write
+      - if: vars.RECUSE != 'off'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GROUP_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" -f name="$CHECK_NAME" -f head_sha="$GROUP_HEAD" \
+            -f status=completed -f conclusion=success -f 'output[title]=Not applicable: merge group' \
+            -f 'output[summary]=Every pull request in a merge group was routed on its own head.' >/dev/null
+          echo "::notice title=recuse::posted on $GROUP_HEAD"

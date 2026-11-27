@@ -1,0 +1,32 @@
+# Negative control for (a): an environment that allows only main, named from a
+# merge group. And the exposure in (b): a push to a queue-named branch, naming
+# the environment that holds the key.
+name: controls
+on:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: ['gh-readonly-queue/**']
+permissions: {}
+jobs:
+  main-only:
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    environment:
+      name: main-only
+      deployment: false
+    steps:
+      - env:
+          PROBE: ${{ secrets.PROBE_SECRET }}
+        run: echo "::notice title=main-only::ref=$GITHUB_REF probe=$([ -n "$PROBE" ] && echo present || echo absent)"
+  queue-branch-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: review-routing
+      deployment: false
+    steps:
+      - env:
+          KEY: ${{ secrets.APP_KEY }}
+          PROBE: ${{ secrets.PROBE_SECRET }}
+        run: echo "::notice title=queue-branch-push::ref=$GITHUB_REF actor=$GITHUB_ACTOR key=$([ -n "$KEY" ] && echo present || echo absent) probe=$([ -n "$PROBE" ] && echo present || echo absent)"

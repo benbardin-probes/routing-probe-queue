@@ -1,0 +1,24 @@
+# For (c), negative: with FORGE=on, the job token posts "routing (main)" on the
+# group's commit, as a check run and as a commit status.
+name: forge
+on:
+  merge_group:
+    types: [checks_requested]
+permissions: {}
+jobs:
+  forge:
+    if: vars.FORGE == 'on'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GROUP_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" -f name='routing (main)' -f head_sha="$GROUP_HEAD" \
+            -f status=completed -f conclusion=success >/dev/null
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GROUP_HEAD" -f context='routing (main)' -f state=success >/dev/null
+          echo "::notice title=forge::posted on $GROUP_HEAD"

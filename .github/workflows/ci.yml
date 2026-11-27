@@ -1,0 +1,13 @@
+# Stands in for Atlas's ci.yaml: one required check, from GitHub Actions.
+name: ci
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+permissions: {}
+jobs:
+  ci-passed:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "::notice title=ci::$GITHUB_EVENT_NAME $GITHUB_REF $GITHUB_SHA"
